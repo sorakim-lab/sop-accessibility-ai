@@ -15,7 +15,7 @@ st.set_page_config(
     page_title="SOP Accessibility + Support Layer",
     page_icon="📘",
     layout="wide",
-    initial_sidebar_bar="collapsed",
+    initial_sidebar_state="collapsed",
 )
 
 # =========================================================
