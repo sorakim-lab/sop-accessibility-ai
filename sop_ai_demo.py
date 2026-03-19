@@ -6,6 +6,11 @@ and adds reasoning notes that keep interpretive openness alive.
 Run: streamlit run sop_search.py
 Optional: set ANTHROPIC_API_KEY for AI support layer
 Falls back to rule-based mode if no API key.
+
+Fixes applied:
+- Model updated to claude-sonnet-4-20250514
+- Error results no longer cached (allows retry on failure)
+- highlight_text() now strips whitespace-only terms for consistency with baseline
 """
 
 import json
@@ -124,7 +129,8 @@ def tokenize(text: str) -> List[str]:
 def highlight_text(text: str, query_terms: List[str]) -> str:
     highlighted = text
     for term in sorted(set(query_terms), key=len, reverse=True):
-        if len(term) < 2:
+        # FIX 3: strip whitespace-only terms for consistency with baseline
+        if not term.strip() or len(term) < 2:
             continue
         pattern = re.compile(rf"({re.escape(term)})", re.IGNORECASE)
         highlighted = pattern.sub(
@@ -271,7 +277,8 @@ Return ONLY valid JSON with this exact shape:
 }}"""
 
         message = client.messages.create(
-            model="claude-sonnet-4-5",
+            # FIX 1: updated to current model
+            model="claude-sonnet-4-20250514",
             max_tokens=800,
             messages=[{"role": "user", "content": prompt}]
         )
@@ -560,7 +567,7 @@ else:
             label, score_color, score_bg = score_label(row["score"])
             related_docs = get_related_titles(row, df)
 
-            # AI support — cached per (query, doc_id)
+            # AI support — cached per (query, doc_id), errors not cached
             cache_key = f"{query}|{row['doc_id']}"
             ai_data = st.session_state.ai_cache.get(cache_key, None)
 
@@ -571,7 +578,9 @@ else:
                         doc=row.to_dict(),
                         related_docs=related_docs,
                     )
-                    st.session_state.ai_cache[cache_key] = ai_data
+                    # FIX 2: only cache successful results so errors can be retried
+                    if not ai_data.get("error"):
+                        st.session_state.ai_cache[cache_key] = ai_data
 
             # matched terms
             all_tokens = tokenize(
@@ -619,9 +628,10 @@ else:
             # ── Support layer expanders ───────────────────
             exp1, exp2, exp3 = st.columns(3, gap="small")
 
-            # Why this result?
+            # Why this result? — first result expanded by default for discoverability
+            is_first = (idx == 0)
             with exp1:
-                with st.expander("🔍 Why this result?"):
+                with st.expander("🔍 Why this result?", expanded=is_first):
                     if has_api and ai_data and not ai_data.get("error"):
                         render(f"""
                         <div style="padding:12px 14px;background:#f5f3ff;
@@ -666,9 +676,9 @@ else:
                     })
                     st.dataframe(breakdown, use_container_width=True, hide_index=True)
 
-            # Related procedures
+            # Related procedures — first result expanded by default
             with exp2:
-                with st.expander("📎 Related procedures"):
+                with st.expander("📎 Related procedures", expanded=is_first):
                     if related_docs:
                         # build AI notes lookup
                         ai_related = {}
@@ -697,9 +707,9 @@ else:
                     else:
                         render('<div style="font-size:13px;color:#9ca3af;">No related procedures mapped.</div>')
 
-            # Reasoning support note
+            # Reasoning support note — first result expanded by default
             with exp3:
-                with st.expander("💡 Reasoning support note"):
+                with st.expander("💡 Reasoning support note", expanded=is_first):
                     if has_api and ai_data and not ai_data.get("error"):
                         render(f"""
                         <div style="padding:12px 14px;background:#f5f3ff;
